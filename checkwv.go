@@ -38,7 +38,10 @@ var (
 	procSetConsoleMode     = kernel32.NewProc("SetConsoleMode")
 	procGetConsoleOutputCP = kernel32.NewProc("GetConsoleOutputCP")
 	procSetConsoleOutputCP = kernel32.NewProc("SetConsoleOutputCP")
+	procGetConsoleTitle    = kernel32.NewProc("GetConsoleTitleW")
+	procSetConsoleTitle    = kernel32.NewProc("SetConsoleTitleW")
 	oldOutputCP            uintptr
+	oldTitle               string
 )
 
 // initConsole switches the console to UTF-8 (so Japanese/Chinese file names
@@ -51,6 +54,7 @@ func initConsole() bool {
 		return false
 	}
 	oldOutputCP, _, _ = procGetConsoleOutputCP.Call()
+	saveTitle()
 	procSetConsoleOutputCP.Call(65001)
 	const enableVT = 0x0004 // ENABLE_VIRTUAL_TERMINAL_PROCESSING
 	r, _, _ := procSetConsoleMode.Call(h, uintptr(mode|enableVT))
@@ -61,6 +65,33 @@ func restoreConsole() {
 	if oldOutputCP != 0 {
 		procSetConsoleOutputCP.Call(oldOutputCP)
 	}
+	if oldTitle != "" {
+		setTitle(oldTitle)
+	}
+}
+
+func saveTitle() {
+	buf := make([]uint16, 1024)
+	n, _, _ := procGetConsoleTitle.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n > 0 && int(n) <= len(buf) {
+		oldTitle = syscall.UTF16ToString(buf[:n])
+	}
+}
+
+func setTitle(s string) {
+	p, err := syscall.UTF16PtrFromString(s)
+	if err != nil {
+		return
+	}
+	procSetConsoleTitle.Call(uintptr(unsafe.Pointer(p)))
+}
+
+// runWV runs wvunpack with its own hidden console. Otherwise every wvunpack
+// process writes its per-file percentage into our window title.
+func runWV(wv string, args ...string) ([]byte, error) {
+	cmd := exec.Command(wv, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000} // CREATE_NO_WINDOW
+	return cmd.CombinedOutput()
 }
 
 // ---------------------------------------------------------------- helpers --
@@ -352,6 +383,7 @@ scanLoop:
 		}
 		if fancy {
 			sb.WriteString(statusLine())
+			setTitle(fmt.Sprintf("checkwv %d%% (%d/%d)", done*100/total, done, total))
 		}
 		os.Stdout.WriteString(sb.String())
 	}
@@ -387,13 +419,13 @@ scanLoop:
 		go func() {
 			defer wg.Done()
 			for p := range jobs {
-				out, err := exec.Command(wv, "-vv", p).CombinedOutput()
+				out, err := runWV(wv, "-vv", p)
 
 				// Files that decode fine: also check that an MD5 is stored.
 				// "wvunpack -s" only reads the header info, so it is fast.
 				hasMD5 := true
 				if err == nil && *MD5Check {
-					sout, serr := exec.Command(wv, "-s", p).CombinedOutput()
+					sout, serr := runWV(wv, "-s", p)
 					hasMD5 = serr != nil || md5RE.Match(sout)
 				}
 
