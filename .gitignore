@@ -1,0 +1,11 @@
+# build output
+*.exe
+
+# checkwv result lists and logs
+BadFiles.txt
+NoMD5Files.txt
+*.log.csv
+
+# Add-WavpackMD5.ps1 leftovers
+*.wv.bak
+*.md5tmp.wv
