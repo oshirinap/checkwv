@@ -31,6 +31,7 @@ A fast, parallel WavPack (`.wv`) integrity checker for Windows, written in Go. I
 ## Build
 
 ```
+go mod init checkwv
 go build -o checkwv.exe
 ```
 
