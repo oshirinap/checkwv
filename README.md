@@ -71,6 +71,10 @@ With no path, the current folder is scanned. You can pass several folders and in
 
 Hybrid files (`.wv` plus `.wvc`) are verified with the correction file when it sits next to the `.wv`, as `wvunpack` does by default.
 
+## Output
+
+![Screenshot of a checkwv.](https://github.com/oshirinap/checkwv/blob/main/sshot-console.png)
+
 ## Notes
 
 - The list files are written to the first scan folder, in roughly the order the files are checked. If that folder isn't writable, they go to `%TEMP%\TEMP_BadFiles.txt` and `%TEMP%\TEMP_NoMD5Files.txt`. A list file from an earlier run is overwritten only when the new run finds an entry for it, so delete old lists first if you don't want a stale one to be mistaken for new results.
