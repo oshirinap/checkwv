@@ -1,4 +1,4 @@
-# checkwv
+# checkwv [![Build](https://github.com/oshirinap/checkwv/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/oshirinap/checkwv/actions/workflows/build.yml)
 
 A fast, parallel WavPack (`.wv`) integrity checker for Windows, written in Go. It is a thin, friendly front end for the official `wvunpack` verifier, with a CheckWavpackFiles-style display.
 
