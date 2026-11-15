@@ -15,7 +15,7 @@ A fast, parallel WavPack (`.wv`) integrity checker for Windows, written in Go. I
 - **Real verification.** Every block's CRC is checked, and the stored MD5 is compared with the decoded audio when the file has one (`wvunpack -vv`).
 - **Optional missing-MD5 warning.** With `--md5`, files that decode fine but have no internal MD5 are flagged in yellow and listed separately. Some encoders, such as REAPER's built-in WavPack writer, don't store one. It's off by default because most healthy files without an MD5 are not a problem, and it costs an extra `wvunpack` call per file.
 - **Familiar display.** Per-folder headers, `n/total` counters, and green `OK` / yellow warning / red `BAD` results, plus an animated progress bar with percent, elapsed time and ETA.
-- **Progress in the window title.** The console title shows the overall progress (for example `checkwv 48% (5701/11692)`) and is restored on exit.
+- **WavPack version warning.** `-v4` flags (and lists) files written by WavPack 4.x, so you can find and upgrade old files. Any version number can be given.
 - **Unicode paths.** The console is switched to UTF-8 while it runs, so Japanese, Chinese and other file names display correctly. The previous code page is restored on exit.
 - **Live result lists.** Bad files go to `BadFiles.txt`, and (with `--md5`) files without an MD5 go to `NoMD5Files.txt`. Entries are written the moment they are found, so the lists survive Ctrl-C or a crash. Both are written to the first scan folder and are UTF-8 with a BOM, so Notepad shows the names correctly.
 - **Script-friendly.** Exit code 0 means no bad files, 1 means at least one bad file, and 2 means `wvunpack` wasn't found. Colors and animation turn off automatically when the output is redirected.
@@ -31,14 +31,13 @@ A fast, parallel WavPack (`.wv`) integrity checker for Windows, written in Go. I
 ## Build
 
 ```
-go mod init checkwv
 go build -o checkwv.exe
 ```
 
 ## Usage
 
 ```
-checkwv.exe [--threads N] [--plain] [--md5] [--wvunpack PATH] [folder-or-file ...]
+checkwv.exe [--threads N] [--plain] [--md5] [-vN ...] [--wvunpack PATH] [folder-or-file ...]
 ```
 
 Examples:
@@ -47,6 +46,7 @@ Examples:
 checkwv.exe D:\music
 checkwv.exe --threads 4 D:\music
 checkwv.exe --md5 D:\music
+checkwv.exe -v4 D:\music
 checkwv.exe --threads 2 "D:\music" "E:\DSD"
 checkwv.exe --wvunpack "C:\Program Files\foobar2000\wavpack\wvunpack.exe" D:\music
 checkwv.exe --plain D:\music > log.txt
@@ -61,6 +61,7 @@ With no path, the current folder is scanned. You can pass several folders and in
 | `--threads N` | Number of files to verify at the same time (default 4). On a spinning hard disk, 2 or 3 can be faster than 4 because there is less seek thrashing. On an SSD, higher values may help. |
 | `--wvunpack PATH` | Path to `wvunpack.exe`. By default `checkwv` looks next to its own executable first, then in `PATH`. |
 | `--md5` | Also warn about files that have no internal MD5 checksum. This adds one quick `wvunpack -s` call per file that passes. |
+| `-vN` | Warn about files written by WavPack version N (for example `-v4`) and list them in `WavPackVNFiles.txt` (for example `WavPackV4Files.txt`). It can be repeated (`-v3 -v4`). It reads the `encoder version:` line of `wvunpack -s`, which should be the same number foobar2000 shows as `WAVPACK_VERSION`. If a file has no readable version line, it is counted as "unreadable version" in the summary. |
 | `--plain` | No colors or animation. This is applied automatically when output is redirected. |
 
 ## How it works
@@ -85,7 +86,7 @@ Hybrid files (`.wv` plus `.wvc`) are verified with the correction file when it s
 
 ## Related
 
-`Add-WavpackMD5.ps1` is a companion PowerShell 7 script. It reads `NoMD5Files.txt` and rewrites those files with an MD5 checksum, verifying each result and preserving all timestamps.
+`Add-WavpackMD5.ps1` is a companion PowerShell 7 script. It reads `NoMD5Files.txt` and rewrites those files with an MD5 checksum, verifying each result and preserving all timestamps. With `-Repack` it does the same for old files listed by `-v4` (`WavPackV4Files.txt`), upgrading them to the current WavPack version.
 
 ## Credits
 
