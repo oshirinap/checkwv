@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:        # adds a "Run workflow" button in the Actions tab
+
+# Least privilege: jobs only get read access to the repository contents unless
+# they say otherwise (the release job below asks for write access itself).
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false        # no go.sum (no dependencies), so nothing to cache
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        shell: bash
+        run: go build -trimpath -ldflags "-s -w" -o checkwv.exe .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkwv-windows
+          path: checkwv.exe
+
+  # Runs only when you push a tag such as v1.0.0: publishes checkwv.exe on the
+  # repository's Releases page.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: checkwv-windows
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: checkwv.exe
+          generate_release_notes: true
