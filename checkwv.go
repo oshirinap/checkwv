@@ -5,11 +5,12 @@
 // "n/total" counters) plus an animated progress bar with elapsed time and ETA.
 //
 // Build:  go mod init checkwv && go build -o checkwv.exe
-// Usage:  checkwv.exe [--threads N] [--plain] [--md5] [--wvunpack PATH] [folder-or-file ...]
+// Usage:  checkwv.exe [--threads N] [--plain] [--md5] [-vN ...] [--wvunpack PATH] [folder-or-file ...]
 //
 // wvunpack.exe is looked for in the same folder as this executable first,
 // then in PATH. Bad files are written to BadFiles.txt (and, with --md5, files
-// without an MD5 to NoMD5Files.txt) in the first scan path, as they are found.
+// without an MD5 to NoMD5Files.txt, files written by WavPack version N, given
+// with -vN, to WavPackVNFiles.txt) in the first scan path, as they are found.
 package main
 
 import (
@@ -146,6 +147,13 @@ func (w *listWriter) close() {
 // like a hash cannot trigger a false match.
 var md5RE = regexp.MustCompile(`(?im)^original md5:\s*[0-9a-f]{32}`)
 
+// verRE matches the "encoder version:" line printed by "wvunpack -s".
+var verRE = regexp.MustCompile(`(?im)^encoder version:\s*(\d+)`)
+
+// verArgRE matches the command-line forms -v4 / --v4 (Go's flag package cannot
+// parse a value glued to a flag name, so these are picked out before flag.Parse).
+var verArgRE = regexp.MustCompile(`^--?v(\d+)$`)
+
 func findWvunpack(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
@@ -240,11 +248,24 @@ func run() int {
 	plain := flag.Bool("plain", false, "no colors or animation (automatic when output is redirected)")
 	MD5Check := flag.Bool("md5", false, "also warn about files without an internal MD5 checksum (one extra wvunpack -s call per file)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--threads N] [--plain] [--md5] [--wvunpack PATH] [folder-or-file ...]\n",
+		fmt.Fprintf(os.Stderr, "Usage: %s [--threads N] [--plain] [--md5] [-vN ...] [--wvunpack PATH] [folder-or-file ...]\n",
 			filepath.Base(os.Args[0]))
 		flag.PrintDefaults()
+		fmt.Fprintln(os.Stderr, "  -vN\n    \twarn about (and list) files written by WavPack version N, e.g. -v4; may be repeated (-v3 -v4)")
 	}
-	flag.Parse()
+
+	// -vN options: pull them out, then let the flag package parse the rest.
+	verWarn := map[int]bool{}
+	var restArgs []string
+	for _, a := range os.Args[1:] {
+		if m := verArgRE.FindStringSubmatch(a); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			verWarn[n] = true
+			continue
+		}
+		restArgs = append(restArgs, a)
+	}
+	flag.CommandLine.Parse(restArgs)
 
 	if *threads < 1 {
 		*threads = 1
@@ -262,6 +283,18 @@ func run() int {
 	noMD5List := &listWriter{name: "NoMD5Files", dir: listDir}
 	defer badList.close()
 	defer noMD5List.close()
+
+	verList := make([]int, 0, len(verWarn))
+	for v := range verWarn {
+		verList = append(verList, v)
+	}
+	sort.Ints(verList)
+	verLists := map[int]*listWriter{}
+	for _, v := range verList {
+		w := &listWriter{name: fmt.Sprintf("WavPackV%dFiles", v), dir: listDir}
+		verLists[v] = w
+		defer w.close()
+	}
 
 	fancy := initConsole() && !*plain
 
@@ -292,6 +325,13 @@ func run() int {
 	if *MD5Check {
 		fmt.Println("Missing-MD5 warning enabled")
 	}
+	if len(verList) > 0 {
+		names := make([]string, len(verList))
+		for i, v := range verList {
+			names[i] = "v" + strconv.Itoa(v)
+		}
+		fmt.Println("WavPack version warning enabled: " + strings.Join(names, ", "))
+	}
 
 	if fancy {
 		os.Stdout.WriteString("\x1b[?25l") // hide cursor while animating
@@ -304,7 +344,9 @@ func run() int {
 		frame int
 		bad   []badFile
 		noMD5 []string
-		start = time.Now()
+		verCount  = map[int]int{} // files found per watched WavPack version
+		noVerLine int             // files whose version could not be read
+		start     = time.Now()
 	)
 	spinner := []byte(`|/-\`)
 
@@ -421,12 +463,21 @@ scanLoop:
 			for p := range jobs {
 				out, err := runWV(wv, "-vv", p)
 
-				// Files that decode fine: also check that an MD5 is stored.
-				// "wvunpack -s" only reads the header info, so it is fast.
-				hasMD5 := true
-				if err == nil && *MD5Check {
+				// Files that decode fine: optionally look at the header info too.
+				// "wvunpack -s" does not decode, so it is fast.
+				noMD5Here, verHere, verUnknown, ver := false, false, false, 0
+				if err == nil && (*MD5Check || len(verWarn) > 0) {
 					sout, serr := runWV(wv, "-s", p)
-					hasMD5 = serr != nil || md5RE.Match(sout)
+					if serr == nil {
+						noMD5Here = *MD5Check && !md5RE.Match(sout)
+						if len(verWarn) > 0 {
+							if m := verRE.FindSubmatch(sout); m == nil {
+								verUnknown = true
+							} else if v, _ := strconv.Atoi(string(m[1])); verWarn[v] {
+								verHere, ver = true, v
+							}
+						}
+					}
 				}
 
 				mu.Lock()
@@ -437,14 +488,28 @@ scanLoop:
 					lines = append(lines, "", paint("36", "> "+dir+":"))
 				}
 				name := filepath.Base(p)
-				if err == nil && !hasMD5 {
-					noMD5 = append(noMD5, p)
-					noMD5List.add(p)
-					lines = append(lines, fmt.Sprintf("%*d/%d:  %s  %s",
-						numW, done, total, name, paint("33", "OK, but no MD5 checksum stored")))
-				} else if err == nil {
-					lines = append(lines, fmt.Sprintf("%*d/%d:  %s  %s",
-						numW, done, total, name, paint("32", "OK")))
+				if err == nil {
+					var notes []string
+					if noMD5Here {
+						noMD5 = append(noMD5, p)
+						noMD5List.add(p)
+						notes = append(notes, "no MD5 checksum stored")
+					}
+					if verHere {
+						verCount[ver]++
+						verLists[ver].add(p)
+						notes = append(notes, fmt.Sprintf("WavPack v%d file", ver))
+					}
+					if verUnknown {
+						noVerLine++
+					}
+					if len(notes) > 0 {
+						lines = append(lines, fmt.Sprintf("%*d/%d:  %s  %s",
+							numW, done, total, name, paint("33", "OK, but "+strings.Join(notes, "; "))))
+					} else {
+						lines = append(lines, fmt.Sprintf("%*d/%d:  %s  %s",
+							numW, done, total, name, paint("32", "OK")))
+					}
 				} else {
 					msg := firstLine(string(out))
 					if msg == "" {
@@ -476,14 +541,23 @@ scanLoop:
 	}
 	fmt.Println()
 	summary := fmt.Sprintf("Done: %d file(s) checked, %d bad", total, len(bad))
+	warnings := noVerLine
 	if *MD5Check {
 		summary += fmt.Sprintf(", %d without MD5", len(noMD5))
+		warnings += len(noMD5)
+	}
+	for _, v := range verList {
+		summary += fmt.Sprintf(", %d WavPack v%d", verCount[v], v)
+		warnings += verCount[v]
+	}
+	if noVerLine > 0 {
+		summary += fmt.Sprintf(", %d with unreadable version", noVerLine)
 	}
 	summary += fmt.Sprintf(", %s elapsed", time.Since(start).Round(time.Second))
 	switch {
 	case len(bad) > 0:
 		fmt.Println(paint("31;1", summary))
-	case len(noMD5) > 0:
+	case warnings > 0:
 		fmt.Println(paint("33;1", summary))
 	default:
 		fmt.Println(paint("32;1", summary))
@@ -496,6 +570,11 @@ scanLoop:
 	}
 	if noMD5List.path != "" {
 		fmt.Println("List written to", noMD5List.path)
+	}
+	for _, v := range verList {
+		if verLists[v].path != "" {
+			fmt.Println("List written to", verLists[v].path)
+		}
 	}
 	if len(bad) > 0 {
 		return 1
