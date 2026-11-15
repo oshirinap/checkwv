@@ -2,6 +2,12 @@
 
 A fast, parallel WavPack (`.wv`) integrity checker for Windows, written in Go. It is a thin, friendly front end for the official `wvunpack` verifier, with a CheckWavpackFiles-style display.
 
+## Requirements
+
+- Windows 10 or later (uses the console's ANSI color support)
+- `wvunpack.exe` from the official WavPack 5.x tools: <https://www.wavpack.com>
+- Go 1.19 or later, only if you want to build it yourself
+
 ## Why this exists
 
 [CheckWavpackFiles](http://gl.tter.org) by gl.tter was the go-to tool for scanning a whole music library for corrupt WavPack files. It has not been updated since 2008 and is built on WavPack 4.50, so it can't read newer files. In particular, **it can't check DSD files** (for example, SACD rips stored as WavPack).
@@ -21,12 +27,6 @@ A fast, parallel WavPack (`.wv`) integrity checker for Windows, written in Go. I
 - **Script-friendly.** Exit code 0 means no bad files, 1 means at least one bad file, and 2 means `wvunpack` wasn't found. Colors and animation turn off automatically when the output is redirected.
 - **Safe scanning.** Skips `$RECYCLE.BIN` and `System Volume Information`, and any folder it can't read.
 - **Single executable.** No runtime or installer, just `checkwv.exe` plus `wvunpack.exe`.
-
-## Requirements
-
-- Windows 10 or later (uses the console's ANSI color support)
-- `wvunpack.exe` from the official WavPack 5.x tools: <https://www.wavpack.com>
-- Go 1.19 or later, only if you want to build it yourself
 
 ## Build
 
