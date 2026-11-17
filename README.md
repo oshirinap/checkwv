@@ -91,4 +91,8 @@ Hybrid files (`.wv` plus `.wvc`) are verified with the correction file when it s
 ## Credits
 
 - Inspired by CheckWavpackFiles by gl.tter.
-- Verification is done by `wvunpack` from the WavPack project by David Bryant: <https://www.wavpack.com>
+- Verification is done by `wvunpack` from the WavPack project by David Bryant: [dbry/WavPack](https://github.com/dbry/WavPack)
+
+## Copyright, License
+
+MIT © 2026 oshirinap, Claude
